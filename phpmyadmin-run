@@ -1,0 +1,38 @@
+#!/bin/bash
+set -e
+
+if [ -z "$MYSQL_SERVER" ]; then
+    echo "MYSQL_SERVER is not defined" >&2
+    exit 1
+fi
+
+# Allow tuning of number of servers if needed
+cat > /etc/httpd/conf.d/limits.conf << EOF
+StartServers        ${HTTPD_SERVERS_MIN:="2"}
+MinSpareServers     ${HTTPD_SERVERS_MIN:="2"}
+MaxSpareServers     ${HTTPD_SERVERS_MAX:="2"}
+ServerLimit         ${HTTPD_SERVERS_LIMIT:="2"}
+MaxClients          ${HTTPD_SERVERS_LIMIT:="2"}
+EOF
+
+# Default vhost
+cat > /etc/httpd/conf.d/vhost.conf << EOF
+Listen ${HTTPD_PORT:="80"}
+ServerName ${HOSTNAME}
+
+<VirtualHost _default_:${HTTPD_PORT:="80"}>
+    DocumentRoot /var/www/html
+    Alias /phpmyadmin /usr/share/phpMyAdmin
+    RedirectMatch ^/\$ /phpmyadmin/
+</VirtualHost>
+EOF
+
+# Connect to remove server
+sed -i -e "s/localhost/${MYSQL_SERVER}/g" /etc/phpMyAdmin/config.inc.php
+
+# Run with a clean environment
+exec env -i \
+    HOSTNAME="$HOSTNAME" \
+    PATH="$PATH" \
+    PWD="$PWD" \
+    /usr/sbin/httpd -D FOREGROUND
